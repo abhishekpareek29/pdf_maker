@@ -1,0 +1,74 @@
+<?php
+/**
+ * @file
+ * Contains code to generate pdf.
+ */
+
+use Knp\Snappy\Pdf;
+
+function pdf_maker_generation_theme() {
+  return array(
+    'pdf_maker' => array(
+      'template' => 'pdf_maker',
+      'arguments' => array(),
+      'path' => drupal_get_path('module', 'pdf_maker') . '/templates',
+    ),
+  );
+}
+
+function pdf_maker_generation_node_presave($node) {
+  if ($node->type == 'XYZ_NODE') {
+    $cycle_complete = &drupal_static(__FUNCTION__);
+    if (!isset($cycle_complete)) {
+      drupal_register_shutdown_function('_pdf_maker_project_post_save', $node);
+      $cycle_complete = 'processed';
+    }
+  }
+}
+
+function _pdf_maker_project_post_save($node) {
+  if ($node->status == 1) {
+    $saved_node = node_load($node->nid);
+
+    // Business logic starts.
+    $variables['node'] = $saved_node;
+    $node_html = theme('pdf_maker', $variables);
+
+    $snappy_path = libraries_get_path('snappy');
+    if (isset($snappy_path)) {
+      require_once($snappy_path . '/vendor/autoload.php');
+
+      $snappy = new Pdf('/usr/local/bin/wkhtmltopdf.sh');
+      $snappy->setOption('user-style-sheet', DRUPAL_ROOT . '/path/to/xyz.css');
+      $snappy->setOption('margin-top', '5mm');
+      $snappy->setOption('margin-bottom', '5mm');
+      $pdfoutput = $snappy->getOutputFromHtml($node_html);
+
+      //  Checks whether there is an output folder inside sites/default/files
+      if (!is_dir('public://pdf')) {
+        // Creates a folder and changes its permissions
+        mkdir("public://pdf", 0777);
+      }
+      if (!is_dir('public://pdf')) {
+        // Creates a folder and changes its permissions
+        mkdir("public://pdf", 0777);
+      }
+
+      // Date folder.
+      $date = date('Y-F-d', REQUEST_TIME);
+      if (!is_dir('public://pdf/' . $date)) {
+        // Creates a folder and changes its permissions
+        mkdir('public://pdf/' . $date, 0777);
+      }
+
+      $filename = 'public://pdf/' . $date . '/submission-' . $node->nid . '.pdf';
+
+      $file_object = file_save_data($pdfoutput, $filename, FILE_EXISTS_REPLACE);
+      $file_object_arr = (array)$file_object;
+      $file_object_arr['display'] = 1;
+
+      $saved_node->field_ct_project_file[$node->language][0] = $file_object_arr;
+      node_save($saved_node);
+    }
+  }
+}
